@@ -1,4 +1,3 @@
-# modified_tgn.py
 import logging
 import numpy as np
 import torch
@@ -11,7 +10,7 @@ from modules.message_function import get_message_function
 from modules.memory_updater import get_memory_updater
 from modules.embedding_module import get_embedding_module
 from model.time_encoding import TimeEncode
-from modules.tppr_embedding import TPPREmbedding, TPPRReducer
+from Modified_TGN.tppr_embedding import TPPREmbedding, TPPRReducer
 
 class TGN_with_TPPR(torch.nn.Module):
     def __init__(self, neighbor_finder, node_features, edge_features, device, 

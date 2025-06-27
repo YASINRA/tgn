@@ -1,4 +1,3 @@
-# train_self_supervised_tppr.py
 import math
 import logging
 import time
@@ -10,7 +9,7 @@ import pickle
 from pathlib import Path
 
 from evaluation.evaluation import eval_edge_prediction
-from model.modified_tgn import TGN_with_TPPR
+from Modified_TGN.modified_tgn import TGN_with_TPPR
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
 from utils.data_processing import get_data, compute_time_statistics
 

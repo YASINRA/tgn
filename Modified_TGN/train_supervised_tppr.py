@@ -1,4 +1,3 @@
-# train_supervised_tppr.py
 import math
 import logging
 import time
@@ -11,7 +10,7 @@ from pathlib import Path
 import torch
 import numpy as np
 
-from model.modified_tgn import TGN_with_TPPR
+from Modified_TGN.modified_tgn import TGN_with_TPPR
 from utils.utils import EarlyStopMonitor, get_neighbor_finder, MLP
 from utils.data_processing import compute_time_statistics, get_data_node_classification
 from evaluation.evaluation import eval_node_classification
