@@ -3,6 +3,7 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm,python
 
 # Custom
+modified_TGN/
 log/
 results/
 saved_checkpoints/
