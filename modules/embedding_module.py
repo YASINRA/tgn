@@ -4,7 +4,8 @@ import numpy as np
 import math
 
 from model.temporal_attention import TemporalAttentionLayer
-
+import csv
+from tppr_tgn.TPPR_Score import tppr_main
 
 class EmbeddingModule(nn.Module):
   def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
@@ -64,7 +65,12 @@ class TimeEmbedding(EmbeddingModule):
 class GraphEmbedding(EmbeddingModule):
   def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
                n_node_features, n_edge_features, n_time_features, embedding_dimension, device,
-               n_heads=2, dropout=0.1, use_memory=True):
+               n_heads=2, dropout=0.1, use_memory=True,
+               train_data_tppr_scores=[],
+               val_data_tppr_scores=[],
+               test_data_tppr_scores=[],
+               new_node_val_data_tppr_scores=[],
+               new_node_test_data_tppr_scores=[]):
     super(GraphEmbedding, self).__init__(node_features, edge_features, memory,
                                          neighbor_finder, time_encoder, n_layers,
                                          n_node_features, n_edge_features, n_time_features,
@@ -72,9 +78,14 @@ class GraphEmbedding(EmbeddingModule):
 
     self.use_memory = use_memory
     self.device = device
+    self.train_data_tppr_scores = train_data_tppr_scores
+    self.val_data_tppr_scores = val_data_tppr_scores
+    self.test_data_tppr_scores = test_data_tppr_scores
+    self.new_node_val_data_tppr_scores = new_node_val_data_tppr_scores
+    self.new_node_test_data_tppr_scores = new_node_test_data_tppr_scores
 
   def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None,
-                        use_time_proj=True):
+                        use_time_proj=True, batch_number=0, data_type='train_data'):
     """Recursive implementation of curr_layers temporal graph attention layers.
 
     src_idx_l [batch_size]: users / items input ids.
@@ -82,6 +93,17 @@ class GraphEmbedding(EmbeddingModule):
     curr_layers [scalar]: number of temporal convolutional layers to stack.
     num_neighbors [scalar]: number of temporal neighbor to consider in each convolutional layer.
     """
+
+    if(data_type == 'train_data'):
+      self.tppr_scores = self.train_data_tppr_scores
+    elif (data_type == 'val_data'):
+      self.tppr_scores = self.val_data_tppr_scores
+    elif (data_type == 'test_data'):
+      self.tppr_scores = self.test_data_tppr_scores
+    elif (data_type == 'new_node_val_data'):
+      self.tppr_scores = self.new_node_val_data_tppr_scores
+    elif (data_type == 'new_node_test_data'):
+      self.tppr_scores = self.new_node_test_data_tppr_scores
 
     assert (n_layers >= 0)
 
@@ -105,7 +127,8 @@ class GraphEmbedding(EmbeddingModule):
                                                            source_nodes,
                                                            timestamps,
                                                            n_layers=n_layers - 1,
-                                                           n_neighbors=n_neighbors)
+                                                           n_neighbors=n_neighbors, batch_number=batch_number,
+                                                           data_type=data_type)
 
       neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor(
         source_nodes,
@@ -121,11 +144,13 @@ class GraphEmbedding(EmbeddingModule):
       edge_deltas_torch = torch.from_numpy(edge_deltas).float().to(self.device)
 
       neighbors = neighbors.flatten()
+      # neighbor embeddings
       neighbor_embeddings = self.compute_embedding(memory,
                                                    neighbors,
                                                    np.repeat(timestamps, n_neighbors),
                                                    n_layers=n_layers - 1,
-                                                   n_neighbors=n_neighbors)
+                                                   n_neighbors=n_neighbors, batch_number=batch_number,
+                                                   data_type=data_type)
 
       effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
       neighbor_embeddings = neighbor_embeddings.view(len(source_nodes), effective_n_neighbors, -1)
@@ -135,13 +160,35 @@ class GraphEmbedding(EmbeddingModule):
 
       mask = neighbors_torch == 0
 
-      source_embedding = self.aggregate(n_layers, source_node_conv_embeddings,
+      neighbor_nodes = neighbors_torch.cpu().numpy()
+      tppr_dict = self.tppr_scores[batch_number]
+      
+      batch_size, n_neighbors, emb_dim = neighbor_embeddings.shape
+
+      # Build TPPR weights tensor
+      tppr_weights = torch.zeros(batch_size, n_neighbors, device=neighbor_embeddings.device)
+
+      for i, src in enumerate(source_nodes):
+          for j, nbr in enumerate(neighbor_nodes[i]):
+              tppr_weights[i, j] = tppr_dict.get(int(src), {}).get(int(nbr), 0.0)
+
+      # Weighted sum of neighbors
+      weighted_neighbors = (tppr_weights.unsqueeze(-1) * neighbor_embeddings).sum(dim=1)  # [B, D]
+
+      # Blend with source embedding
+      source_embedding = 0.9 * source_node_conv_embeddings + 0.1 * weighted_neighbors
+
+      source_embedding = self.aggregate(n_layers, source_embedding,
                                         source_nodes_time_embedding,
                                         neighbor_embeddings,
                                         edge_time_embeddings,
                                         edge_features,
-                                        mask)
-
+                                        mask,
+                                        source_nodes,
+                                        neighbors_torch.cpu().numpy(),
+                                        weighted_neighbors
+        )
+      # The Final embedding for each epoch calculate here and send for train tgn model      
       return source_embedding
 
   def aggregate(self, n_layers, source_node_features, source_nodes_time_embedding,
@@ -192,14 +239,24 @@ class GraphSumEmbedding(GraphEmbedding):
 class GraphAttentionEmbedding(GraphEmbedding):
   def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
                n_node_features, n_edge_features, n_time_features, embedding_dimension, device,
-               n_heads=2, dropout=0.1, use_memory=True):
+               n_heads=2, dropout=0.1, use_memory=True,
+               train_data_tppr_scores=[],
+               val_data_tppr_scores=[],
+               test_data_tppr_scores=[],
+               new_node_val_data_tppr_scores=[],
+               new_node_test_data_tppr_scores=[]):
     super(GraphAttentionEmbedding, self).__init__(node_features, edge_features, memory,
                                                   neighbor_finder, time_encoder, n_layers,
                                                   n_node_features, n_edge_features,
                                                   n_time_features,
                                                   embedding_dimension, device,
                                                   n_heads, dropout,
-                                                  use_memory)
+                                                  use_memory,
+                                                  train_data_tppr_scores,
+                                                  val_data_tppr_scores,
+                                                  test_data_tppr_scores,
+                                                  new_node_val_data_tppr_scores,
+                                                  new_node_test_data_tppr_scores)
 
     self.attention_models = torch.nn.ModuleList([TemporalAttentionLayer(
       n_node_features=n_node_features,
@@ -213,7 +270,7 @@ class GraphAttentionEmbedding(GraphEmbedding):
 
   def aggregate(self, n_layer, source_node_features, source_nodes_time_embedding,
                 neighbor_embeddings,
-                edge_time_embeddings, edge_features, mask):
+                edge_time_embeddings, edge_features, mask, source_nodes, neighbor_nodes, weighted_neighbors):
     attention_model = self.attention_models[n_layer - 1]
 
     source_embedding, _ = attention_model(source_node_features,
@@ -223,6 +280,9 @@ class GraphAttentionEmbedding(GraphEmbedding):
                                           edge_features,
                                           mask)
 
+    # Blend with source embedding
+    source_embedding = 0.95 * source_embedding + 0.05 * weighted_neighbors
+
     return source_embedding
 
 
@@ -230,7 +290,33 @@ def get_embedding_module(module_type, node_features, edge_features, memory, neig
                          time_encoder, n_layers, n_node_features, n_edge_features, n_time_features,
                          embedding_dimension, device,
                          n_heads=2, dropout=0.1, n_neighbors=None,
-                         use_memory=True):
+                         use_memory=True, n_epoch=0,
+                         train_data=[],
+                         val_data=[],
+                         test_data=[],
+                         new_node_val_data=[],
+                         new_node_test_data=[]):
+  
+  num_train_instance = len(train_data.sources)
+  num_batch = math.ceil(num_train_instance / 200)
+  train_data_tppr_scores = tppr_scores_for_graph(data=train_data, batch_size=num_batch, data_type='train_data')
+
+  num_val_instance = len(val_data.sources)
+  num_batch = math.ceil(num_val_instance / 200)
+  val_data_tppr_scores = tppr_scores_for_graph(data=val_data, n_batch=num_batch, data_type='val_data')
+
+  num_test_instance = len(test_data.sources)
+  num_batch = math.ceil(num_test_instance / 200)
+  test_data_tppr_scores = tppr_scores_for_graph(data=test_data, n_batch=num_batch, data_type='test_data')
+
+  num_new_node_val_instance = len(new_node_val_data.sources)
+  num_batch = math.ceil(num_new_node_val_instance / 200)
+  new_node_val_data_tppr_scores = tppr_scores_for_graph(data=new_node_val_data, n_batch=num_batch, data_type='new_node_val_data')
+
+  num_new_node_test_instance = len(new_node_test_data.sources)
+  num_batch = math.ceil(num_new_node_test_instance / 200)
+  new_node_test_data_tppr_scores = tppr_scores_for_graph(data=new_node_test_data, n_batch=num_batch, data_type='new_node_test_data')
+  
   if module_type == "graph_attention":
     return GraphAttentionEmbedding(node_features=node_features,
                                     edge_features=edge_features,
@@ -243,7 +329,12 @@ def get_embedding_module(module_type, node_features, edge_features, memory, neig
                                     n_time_features=n_time_features,
                                     embedding_dimension=embedding_dimension,
                                     device=device,
-                                    n_heads=n_heads, dropout=dropout, use_memory=use_memory)
+                                    n_heads=n_heads, dropout=dropout, use_memory=use_memory,
+                                    train_data_tppr_scores=train_data_tppr_scores,
+                                    val_data_tppr_scores=val_data_tppr_scores,
+                                    test_data_tppr_scores=test_data_tppr_scores,
+                                    new_node_val_data_tppr_scores=new_node_val_data_tppr_scores,
+                                    new_node_test_data_tppr_scores=new_node_test_data_tppr_scores)
   elif module_type == "graph_sum":
     return GraphSumEmbedding(node_features=node_features,
                               edge_features=edge_features,
@@ -289,3 +380,36 @@ def get_embedding_module(module_type, node_features, edge_features, memory, neig
     raise ValueError("Embedding Module {} not supported".format(module_type))
 
 
+def tppr_scores_for_graph(data, batch_size, data_type='train_data'):
+  sources = data.sources
+  destinations = data.destinations
+  timestamps = data.timestamps
+  edge_idxs = data.edge_idxs
+  
+  if(data_type == 'train_data'):
+    labels = data.labels
+
+  tppr_scores = []
+
+  n_samples = len(sources)
+  n_batches = (n_samples + batch_size - 1) // batch_size 
+
+  for j in range(n_batches):
+    start_idx = 0
+    end_idx = min((j + 1) * batch_size, n_samples)
+
+    filename = f"./tppr/wikipedia_{data_type}_batch_{j}.csv"
+    with open(filename, "w", newline="") as f:
+        writer = csv.writer(f)
+        if(data_type == 'train_data'):
+          writer.writerow(["source", "destination", "timestamp", "edge_idx", "label"])
+          for i in range(start_idx, end_idx):
+            writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i], labels[i]])
+        else:
+          writer.writerow(["source", "destination", "timestamp", "edge_idx"])
+          for i in range(start_idx, end_idx):
+            writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i]])
+        
+    tppr_scores.append(tppr_main(filename))
+
+  return tppr_scores
