@@ -23,11 +23,11 @@ class TGN(torch.nn.Module):
                memory_updater_type="gru",
                use_destination_embedding_in_message=False,
                use_source_embedding_in_message=False,
-               dyrep=False, n_epoch = 0, train_data = [], val_data = [], test_data = [], new_node_val_data = [], 
+               dyrep=False, num_batch=0, train_data = [], val_data = [], test_data = [], new_node_val_data = [], 
                new_node_test_data = []):
     super(TGN, self).__init__()
 
-    self.n_epoch = n_epoch
+    self.num_batch = num_batch
     self.train_data = train_data
     self.val_data = val_data
     self.test_data = test_data
@@ -100,7 +100,7 @@ class TGN(torch.nn.Module):
                                                  n_heads=n_heads, dropout=dropout,
                                                  use_memory=use_memory,
                                                  n_neighbors=self.n_neighbors,
-                                                 n_epoch=self.n_epoch,
+                                                 num_batch=self.num_batch,
                                                  train_data=self.train_data,
                                                  val_data=self.val_data,
                                                  test_data=self.test_data,

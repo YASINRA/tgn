@@ -160,7 +160,7 @@ for i in range(args.n_runs):
             use_destination_embedding_in_message=args.use_destination_embedding_in_message,
             use_source_embedding_in_message=args.use_source_embedding_in_message,
             dyrep=args.dyrep,
-            n_epoch = NUM_EPOCH,
+            num_batch = BATCH_SIZE,
             train_data = train_data,
             val_data = val_data,
             test_data = test_data,

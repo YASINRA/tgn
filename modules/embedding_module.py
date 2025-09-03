@@ -290,32 +290,18 @@ def get_embedding_module(module_type, node_features, edge_features, memory, neig
                          time_encoder, n_layers, n_node_features, n_edge_features, n_time_features,
                          embedding_dimension, device,
                          n_heads=2, dropout=0.1, n_neighbors=None,
-                         use_memory=True, n_epoch=0,
+                         use_memory=True, num_batch=0,
                          train_data=[],
                          val_data=[],
                          test_data=[],
                          new_node_val_data=[],
                          new_node_test_data=[]):
   
-  num_train_instance = len(train_data.sources)
-  num_batch = math.ceil(num_train_instance / 200)
   train_data_tppr_scores = tppr_scores_for_graph(data=train_data, batch_size=num_batch, data_type='train_data')
-
-  num_val_instance = len(val_data.sources)
-  num_batch = math.ceil(num_val_instance / 200)
-  val_data_tppr_scores = tppr_scores_for_graph(data=val_data, n_batch=num_batch, data_type='val_data')
-
-  num_test_instance = len(test_data.sources)
-  num_batch = math.ceil(num_test_instance / 200)
-  test_data_tppr_scores = tppr_scores_for_graph(data=test_data, n_batch=num_batch, data_type='test_data')
-
-  num_new_node_val_instance = len(new_node_val_data.sources)
-  num_batch = math.ceil(num_new_node_val_instance / 200)
-  new_node_val_data_tppr_scores = tppr_scores_for_graph(data=new_node_val_data, n_batch=num_batch, data_type='new_node_val_data')
-
-  num_new_node_test_instance = len(new_node_test_data.sources)
-  num_batch = math.ceil(num_new_node_test_instance / 200)
-  new_node_test_data_tppr_scores = tppr_scores_for_graph(data=new_node_test_data, n_batch=num_batch, data_type='new_node_test_data')
+  val_data_tppr_scores = tppr_scores_for_graph(data=val_data, batch_size=num_batch, data_type='val_data')
+  test_data_tppr_scores = tppr_scores_for_graph(data=test_data, batch_size=num_batch, data_type='test_data')
+  new_node_val_data_tppr_scores = tppr_scores_for_graph(data=new_node_val_data, batch_size=num_batch, data_type='new_node_val_data')
+  new_node_test_data_tppr_scores = tppr_scores_for_graph(data=new_node_test_data, batch_size=num_batch, data_type='new_node_test_data')
   
   if module_type == "graph_attention":
     return GraphAttentionEmbedding(node_features=node_features,
