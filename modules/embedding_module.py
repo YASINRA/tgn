@@ -127,7 +127,8 @@ class GraphEmbedding(EmbeddingModule):
                                                            source_nodes,
                                                            timestamps,
                                                            n_layers=n_layers - 1,
-                                                           n_neighbors=n_neighbors, batch_number=batch_number,
+                                                           n_neighbors=n_neighbors,
+                                                           batch_number=batch_number,
                                                            data_type=data_type)
 
       neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor(
@@ -149,7 +150,8 @@ class GraphEmbedding(EmbeddingModule):
                                                    neighbors,
                                                    np.repeat(timestamps, n_neighbors),
                                                    n_layers=n_layers - 1,
-                                                   n_neighbors=n_neighbors, batch_number=batch_number,
+                                                   n_neighbors=n_neighbors,
+                                                   batch_number=batch_number,
                                                    data_type=data_type)
 
       effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
@@ -282,7 +284,6 @@ class GraphAttentionEmbedding(GraphEmbedding):
 
     # Blend with source embedding
     source_embedding = 0.95 * source_embedding + 0.05 * weighted_neighbors
-
     return source_embedding
 
 
@@ -302,7 +303,7 @@ def get_embedding_module(module_type, node_features, edge_features, memory, neig
   test_data_tppr_scores = tppr_scores_for_graph(data=test_data, batch_size=num_batch, data_type='test_data')
   new_node_val_data_tppr_scores = tppr_scores_for_graph(data=new_node_val_data, batch_size=num_batch, data_type='new_node_val_data')
   new_node_test_data_tppr_scores = tppr_scores_for_graph(data=new_node_test_data, batch_size=num_batch, data_type='new_node_test_data')
-  
+
   if module_type == "graph_attention":
     return GraphAttentionEmbedding(node_features=node_features,
                                     edge_features=edge_features,
@@ -385,16 +386,16 @@ def tppr_scores_for_graph(data, batch_size, data_type='train_data'):
     end_idx = min((j + 1) * batch_size, n_samples)
 
     filename = f"./tppr/wikipedia_{data_type}_batch_{j}.csv"
-    with open(filename, "w", newline="") as f:
-        writer = csv.writer(f)
-        if(data_type == 'train_data'):
-          writer.writerow(["source", "destination", "timestamp", "edge_idx", "label"])
-          for i in range(start_idx, end_idx):
-            writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i], labels[i]])
-        else:
-          writer.writerow(["source", "destination", "timestamp", "edge_idx"])
-          for i in range(start_idx, end_idx):
-            writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i]])
+    # with open(filename, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     if(data_type == 'train_data'):
+    #       writer.writerow(["source", "destination", "timestamp", "edge_idx", "label"])
+    #       for i in range(start_idx, end_idx):
+    #         writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i], labels[i]])
+    #     else:
+    #       writer.writerow(["source", "destination", "timestamp", "edge_idx"])
+    #       for i in range(start_idx, end_idx):
+    #         writer.writerow([sources[i], destinations[i], timestamps[i], edge_idxs[i]])
         
     tppr_scores.append(tppr_main(filename))
 
